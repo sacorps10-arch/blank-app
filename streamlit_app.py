@@ -37,25 +37,22 @@ st.markdown("""
     background-color: #393939;
     text-align: center;
     padding: 15px 0;
-    color: white; /* 글씨를 흰색으로 */
 }
 
 [data-testid="stMetricLabel"] {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: white; /* 라벨도 흰색 */
 }
 
-[data-testid="stMetricValue"] {
-  color: white; /* 값도 흰색 */
+[data-testid="stMetricDeltaIcon-Up"] {
+    position: relative;
+    left: 38%;
+    -webkit-transform: translateX(-50%);
+    -ms-transform: translateX(-50%);
+    transform: translateX(-50%);
 }
 
-[data-testid="stMetricDelta"] {
-  color: white !important; /* 증감 수치 흰색 */
-}
-
-[data-testid="stMetricDeltaIcon-Up"],
 [data-testid="stMetricDeltaIcon-Down"] {
     position: relative;
     left: 38%;
@@ -70,63 +67,84 @@ st.markdown("""
 
 #######################
 # Load data
-df_reshaped = pd.read_csv('titanic.csv') ## 분석 데이터 넣기
+#######################
+# Load data (robust)
+def load_people_data():
+    # 1) ensure openpyxl
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        import sys, subprocess
+        try:
+            st.warning("필수 패키지 'openpyxl'이 없어 설치합니다…")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl", "--quiet"])
+            st.success("'openpyxl' 설치 완료.")
+        except Exception as e:
+            st.error(f"'openpyxl' 설치 실패: {e}")
+            st.stop()
+
+    # 2) find file
+    from pathlib import Path
+    candidates = ["people_data.xlsx", "/mnt/data/people_data.xlsx"]
+    excel_path = next((p for p in candidates if Path(p).exists()), None)
+    if not excel_path:
+        st.error("people_data.xlsx 파일을 찾을 수 없습니다. 앱 루트 또는 /mnt/data 에 배치해 주세요.")
+        st.stop()
+
+    # 3) read
+    try:
+        return pd.read_excel(excel_path, engine="openpyxl")
+    except Exception as e:
+        st.error(f"엑셀 로딩 중 오류: {e}")
+        st.stop()
+
+df_reshaped = load_people_data()
+
+#df_reshaped = pd.read_excel('people_data.xlsx')
 
 
 #######################
 # Sidebar
+
 with st.sidebar:
-    st.title("🚢 Titanic Survival Dashboard")
+    st.title("👥 인구 특성 분석 대시보드")
 
-    # Pclass filter
-    pclass = st.multiselect(
-        "Select Passenger Class",
-        options=sorted(df_reshaped["Pclass"].unique()),
-        default=sorted(df_reshaped["Pclass"].unique())
+    # 연령대 선택
+    age_group = st.selectbox(
+        "연령대 선택",
+        options=["전체", "10대", "20대", "30대", "40대", "50대", "60대 이상"]
     )
 
-    # Sex filter
-    sex = st.multiselect(
-        "Select Gender",
-        options=df_reshaped["Sex"].unique(),
-        default=df_reshaped["Sex"].unique()
+    # 성별 선택
+    gender = st.radio(
+        "성별 선택",
+        options=["전체", "Male", "Female"]
     )
 
-    # Embarked filter
-    embarked = st.multiselect(
-        "Select Embarked Port",
-        options=df_reshaped["Embarked"].dropna().unique(),
-        default=df_reshaped["Embarked"].dropna().unique()
+    # 직업 유무 선택
+    job_status = st.radio(
+        "직업 상태",
+        options=["전체", "Employed", "Unemployed"]
     )
 
-    # Age range slider
-    age_min = int(df_reshaped["Age"].min())
-    age_max = int(df_reshaped["Age"].max())
-    age_range = st.slider(
-        "Select Age Range",
-        min_value=age_min,
-        max_value=age_max,
-        value=(age_min, age_max)
+    # 소득 범위 선택
+    income_range = st.slider(
+        "소득 범위 (달러)",
+        min_value=0, max_value=500, value=(0, 500), step=10
     )
 
-    # Fare range slider
-    fare_min = int(df_reshaped["Fare"].min())
-    fare_max = int(df_reshaped["Fare"].max())
-    fare_range = st.slider(
-        "Select Fare Range",
-        min_value=fare_min,
-        max_value=fare_max,
-        value=(fare_min, fare_max)
+    # 색상 테마 선택
+    color_theme = st.selectbox(
+        "색상 테마",
+        options=["Blues", "Viridis", "Plasma", "Cividis"]
     )
 
-    # 필터링된 데이터프레임 (이후 본문에서 활용)
-    df_filtered = df_reshaped[
-        (df_reshaped["Pclass"].isin(pclass)) &
-        (df_reshaped["Sex"].isin(sex)) &
-        (df_reshaped["Embarked"].isin(embarked)) &
-        (df_reshaped["Age"].between(age_range[0], age_range[1], inclusive="both")) &
-        (df_reshaped["Fare"].between(fare_range[0], fare_range[1], inclusive="both"))
-    ]
+
+
+
+#######################
+# Plots
+
 
 
 #######################
@@ -135,146 +153,129 @@ col = st.columns((1.5, 4.5, 2), gap='medium')
 
 # with col[0]:
 with col[0]:
-    st.markdown("### 📊 Survival Summary")
+    st.markdown("### 📊 요약 지표")
 
-    # KPI 지표
-    total_passengers = len(df_filtered)
-    survived = df_filtered["Survived"].sum()
-    died = total_passengers - survived
-    survival_rate = (survived / total_passengers * 100) if total_passengers > 0 else 0
+    # 요약 지표 계산
+    avg_income = df_reshaped["Income($)"].mean()
+    max_income = df_reshaped["Income($)"].max()
+    min_income = df_reshaped["Income($)"].min()
+    avg_age = df_reshaped["Age"].mean()
+    avg_height = df_reshaped["Height(cm)"].mean()
+    employed_ratio = (df_reshaped["Job Status"].eq("Employed").mean()) * 100
+    unemployed_ratio = 100 - employed_ratio
 
-    st.metric("Total Passengers", total_passengers)
-    st.metric("Survived", survived, delta=f"{survival_rate:.1f}%")
-    st.metric("Died", died)
+    # 카드 스타일 템플릿
+    def metric_card(title, value, subtitle=""):
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #FFFFFF;
+                padding: 15px;
+                border-radius: 10px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                text-align: center;
+                margin-bottom: 15px;
+            ">
+                <h4 style="margin-bottom:5px;">{title}</h4>
+                <h2 style="margin:5px 0;">{value}</h2>
+                <p style="color:gray; margin:0;">{subtitle}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-    st.markdown("---")
+    # 카드 표시
+    metric_card("평균 소득 ($)", f"{avg_income:.1f}", f"최고 {max_income}, 최저 {min_income}")
+    metric_card("평균 나이", f"{avg_age:.1f} 세")
+    metric_card("평균 키", f"{avg_height:.1f} cm")
+    metric_card("고용률", f"{employed_ratio:.1f} %")
+    metric_card("실업률", f"{unemployed_ratio:.1f} %")
 
-    # 성별별 생존율
-    st.markdown("#### Survival Rate by Gender")
-    gender_survival = (
-        df_filtered.groupby("Sex")["Survived"].mean().reset_index()
-    )
-    gender_survival["Survived"] = gender_survival["Survived"] * 100
-
-    fig_gender = px.pie(
-        gender_survival,
-        names="Sex",
-        values="Survived",
-        color="Sex",
-        hole=0.4,
-        color_discrete_map={"male": "blue", "female": "pink"}
-    )
-    st.plotly_chart(fig_gender, use_container_width=True)
-
-    st.markdown("#### Survival Rate by Class")
-    class_survival = (
-        df_filtered.groupby("Pclass")["Survived"].mean().reset_index()
-    )
-    class_survival["Survived"] = class_survival["Survived"] * 100
-
-    fig_class = px.pie(
-        class_survival,
-        names="Pclass",
-        values="Survived",
-        hole=0.4,
-        color="Pclass"
-    )
-    st.plotly_chart(fig_class, use_container_width=True)
 
 # with col[1]:
 with col[1]:
-    st.markdown("### 📈 Survival Analysis")
+    st.markdown("### 📈 인구 특성 시각화")
 
-    # 1. 연령 분포 (생존자 vs 사망자)
-    st.markdown("#### Age Distribution by Survival")
-    fig_age = px.histogram(
-        df_filtered,
-        x="Age",
-        color="Survived",
+    # 1. 연령대 컬럼 생성
+    bins = [0, 19, 29, 39, 49, 59, 69, 120]
+    labels = ["10대 이하", "20대", "30대", "40대", "50대", "60대", "70대 이상"]
+    df_reshaped["연령대"] = pd.cut(df_reshaped["Age"], bins=bins, labels=labels, right=True)
+
+    # 2. 히트맵 (연령대 vs 고용상태, 값=평균 소득)
+    heatmap_data = (
+        df_reshaped.groupby(["연령대", "Job Status"])["Income($)"]
+        .mean()
+        .reset_index()
+    )
+
+    heatmap_chart = alt.Chart(heatmap_data).mark_rect().encode(
+        x=alt.X("Job Status:N", title="직업 상태"),
+        y=alt.Y("연령대:N", title="연령대"),
+        color=alt.Color("Income($):Q", scale=alt.Scale(scheme=color_theme.lower()), title="평균 소득($)"),
+        tooltip=["연령대", "Job Status", "Income($)"]
+    ).properties(
+        width=400,
+        height=300,
+        title="연령대 × 직업 상태별 평균 소득 히트맵"
+    )
+
+    st.altair_chart(heatmap_chart, use_container_width=True)
+
+    # 3. 소득 분포 히스토그램 (성별 구분)
+    hist_chart = px.histogram(
+        df_reshaped,
+        x="Income($)",
+        color="Gender",
         nbins=30,
-        barmode="overlay",
-        color_discrete_map={0: "red", 1: "green"},
-        labels={"Survived": "Survival"}
+        title="소득 분포 (성별 구분)",
+        color_discrete_sequence=px.colors.sequential.__dict__.get(color_theme, px.colors.sequential.Blues)
     )
-    fig_age.update_traces(opacity=0.6)
-    st.plotly_chart(fig_age, use_container_width=True)
+    hist_chart.update_layout(bargap=0.1)
 
-    st.markdown("---")
+    st.plotly_chart(hist_chart, use_container_width=True)
 
-    # 2. 운임대별 생존율 (Fare vs Survival)
-    st.markdown("#### Fare vs Survival")
-    fig_fare = px.box(
-        df_filtered,
-        x="Survived",
-        y="Fare",
-        color="Survived",
-        color_discrete_map={0: "red", 1: "green"},
-        labels={"Survived": "Survival", "Fare": "Fare"}
-    )
-    st.plotly_chart(fig_fare, use_container_width=True)
 
-    st.markdown("---")
-
-    # 3. 승선 항구별 생존율
-    st.markdown("#### Survival Rate by Embarked Port")
-    embarked_survival = (
-        df_filtered.groupby("Embarked")["Survived"].mean().reset_index()
-    )
-    embarked_survival["Survived"] = embarked_survival["Survived"] * 100
-
-    fig_embarked = px.bar(
-        embarked_survival,
-        x="Embarked",
-        y="Survived",
-        color="Embarked",
-        text=embarked_survival["Survived"].round(1).astype(str) + "%",
-        labels={"Survived": "Survival Rate (%)"}
-    )
-    st.plotly_chart(fig_embarked, use_container_width=True)
 
 
 # with col[2]:
 with col[2]:
-    st.markdown("### 🏅 Top Groups & Details")
+    st.markdown("### 🏆 소득 Top 10 인물")
 
-    # 1. Top 생존율 집단 (성별/등급/연령대)
-    st.markdown("#### Top Survival Groups")
-    group_stats = (
-        df_filtered.groupby(["Sex", "Pclass"])["Survived"].mean().reset_index()
-    )
-    group_stats["Survived"] = group_stats["Survived"] * 100
-    group_stats = group_stats.sort_values("Survived", ascending=False)
+    # 소득 상위 10명
+    top_income = df_reshaped.nlargest(10, "Income($)")
 
-    fig_top_groups = px.bar(
-        group_stats,
-        x="Survived",
-        y="Sex",
-        color="Pclass",
-        orientation="h",
-        text=group_stats["Survived"].round(1).astype(str) + "%",
-        labels={"Survived": "Survival Rate (%)", "Sex": "Gender", "Pclass": "Class"},
-    )
-    st.plotly_chart(fig_top_groups, use_container_width=True)
+    # Progress bar 스타일 테이블
+    for i, row in top_income.iterrows():
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#FFFFFF;
+                padding:8px;
+                margin-bottom:8px;
+                border-radius:8px;
+                box-shadow:0 2px 5px rgba(0,0,0,0.1);
+            ">
+                <strong>{row['Name']}</strong>  
+                <div style="font-size:12px; color:gray;">
+                    {row['Gender']} | 나이 {row['Age']}세 | {row['Job Status']}
+                </div>
+                <div style="margin-top:5px;">
+                    <progress value="{row['Income($)']}" max="500" style="width:100%; height:12px;"></progress>
+                </div>
+                <div style="font-size:13px; text-align:right; color:#333;">
+                    ${row['Income($)']}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     st.markdown("---")
-
-    # 2. 데이터 테이블 (필터링 반영)
-    st.markdown("#### Filtered Passenger Data")
-    st.dataframe(
-        df_filtered[["PassengerId", "Name", "Sex", "Age", "Pclass", "Fare", "Embarked", "Survived"]],
-        use_container_width=True,
-        height=300
-    )
-
-    st.markdown("---")
-
-    # 3. 데이터 출처 및 설명
-    st.markdown("#### ℹ️ About Dataset")
-    st.info(
+    st.markdown("### 📌 데이터 설명")
+    st.markdown(
         """
-        Titanic dataset (Kaggle / seaborn 내장 데이터 변형판).
-        - 총 승객 수: 891명
-        - 주요 변수: 성별, 연령, 객실 등급, 운임, 탑승 항구
-        - 목표 분석: 생존 패턴과 요인 파악
+        - **소득 Top 10**: 상위 10명의 인물을 소득 기준으로 표시했습니다.  
+        - Progress bar는 최대 소득 범위(500$) 기준으로 상대적 위치를 보여줍니다.  
+        - 하단 설명 영역에는 데이터 출처 및 추가 안내를 넣을 수 있습니다.  
         """
     )
